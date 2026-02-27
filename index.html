@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>横浜市 統合ダッシュボード</title>
+    
+    <!-- Tailwind CSS (スタイリング) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js (グラフ描画) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Lucide Icons (アイコン) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Noto+Sans+JP:wght@300;400;700&display=swap');
+        
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            background-color: #0f172a; /* Slate 900 */
+            color: #f8fafc; /* Slate 50 */
+        }
+        
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7); /* Slate 800 with opacity */
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        /* グラフコンテナの高さ固定 */
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+    <div class="max-w-6xl mx-auto space-y-6">
+        
+        <!-- ヘッダー -->
+        <header class="flex items-center justify-between pb-4 border-b border-slate-700">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-bold flex items-center gap-2">
+                    <i data-lucide="map-pin" class="text-blue-400"></i>
+                    横浜市 統合ダッシュボード
+                </h1>
+                <p class="text-slate-400 mt-1" id="current-time-display">現在時刻を取得中...</p>
+            </div>
+            <div class="hidden md:flex items-center gap-2 bg-blue-900/30 text-blue-300 px-4 py-2 rounded-full text-sm font-semibold border border-blue-500/30">
+                <i data-lucide="activity"></i>
+                LIVE DATA
+            </div>
+        </header>
+
+        <!-- メイングリッド -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            <!-- 1. 気象情報セクション -->
+            <section class="glass-panel rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xl font-semibold flex items-center gap-2">
+                        <i data-lucide="cloud-sun" class="text-yellow-400"></i>
+                        現在の気象
+                    </h2>
+                    <span class="text-xs text-slate-400">Open-Meteo API</span>
+                </div>
+                
+                <div id="weather-loading" class="animate-pulse flex space-x-4">
+                    <div class="flex-1 space-y-4 py-1">
+                        <div class="h-4 bg-slate-600 rounded w-3/4"></div>
+                        <div class="space-y-2">
+                            <div class="h-4 bg-slate-600 rounded"></div>
+                            <div class="h-4 bg-slate-600 rounded w-5/6"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="weather-content" class="hidden flex flex-col items-center sm:flex-row sm:justify-around gap-6">
+                    <div class="text-center">
+                        <i id="weather-icon" data-lucide="sun" class="w-20 h-20 mx-auto text-yellow-400 mb-2"></i>
+                        <div id="weather-desc" class="text-lg font-medium text-slate-300">取得中</div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-x-8 gap-y-4 text-left">
+                        <div>
+                            <p class="text-slate-400 text-sm">気温</p>
+                            <p class="text-3xl font-bold text-white"><span id="temp-val">--</span><span class="text-lg font-normal text-slate-300">℃</span></p>
+                        </div>
+                        <div>
+                            <p class="text-slate-400 text-sm">体感温度</p>
+                            <p class="text-xl font-semibold text-slate-200"><span id="feels-val">--</span><span class="text-sm font-normal text-slate-300">℃</span></p>
+                        </div>
+                        <div>
+                            <p class="text-slate-400 text-sm">湿度</p>
+                            <p class="text-xl font-semibold text-slate-200"><span id="humidity-val">--</span><span class="text-sm font-normal text-slate-300">%</span></p>
+                        </div>
+                        <div>
+                            <p class="text-slate-400 text-sm">風速</p>
+                            <p class="text-xl font-semibold text-slate-200"><span id="wind-val">--</span><span class="text-sm font-normal text-slate-300">m/s</span></p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 2. 天文情報セクション -->
+            <section class="glass-panel rounded-2xl p-6 shadow-xl">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-semibold flex items-center gap-2">
+                        <i data-lucide="moon-star" class="text-purple-400"></i>
+                        天文情報 (自前計算)
+                    </h2>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 items-center">
+                    
+                    <!-- 太陽トラッカー -->
+                    <div class="flex flex-col items-center p-4 bg-slate-800/50 rounded-xl">
+                        <p class="text-sm text-slate-300 mb-2 font-medium" id="sun-status-label">日中</p>
+                        <svg viewBox="0 0 100 100" class="w-full max-w-[180px] h-auto overflow-visible">
+                            <!-- 水平線 -->
+                            <line x1="-10" y1="90" x2="110" y2="90" stroke="#4b5563" stroke-width="2"/>
+                            <!-- 太陽の軌道アーチ -->
+                            <path d="M 10 90 A 40 40 0 0 1 90 90" fill="none" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="4 4"/>
+                            <!-- 太陽アイコン -->
+                            <circle id="sun-icon" cx="10" cy="90" r="6" fill="#fbbf24" stroke="#fef3c7" stroke-width="2" class="transition-all duration-1000"/>
+                        </svg>
+                        <div class="flex justify-between w-full mt-3 text-xs text-slate-400 px-2 font-mono">
+                            <div class="text-center">
+                                <i data-lucide="sunrise" class="w-4 h-4 mx-auto mb-1 text-orange-400"></i>
+                                <span id="sunrise-time">--:--</span>
+                            </div>
+                            <div class="text-center">
+                                <i data-lucide="sunset" class="w-4 h-4 mx-auto mb-1 text-red-400"></i>
+                                <span id="sunset-time">--:--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 月齢・月の形状 -->
+                    <div class="flex flex-col items-center justify-center p-4 bg-slate-800/50 rounded-xl h-full">
+                        <div id="moon-svg-container" class="mb-4">
+                            <!-- SVGがJSから挿入されます -->
+                        </div>
+                        <div class="text-center">
+                            <p class="text-sm text-slate-400">本日の月齢</p>
+                            <p class="text-2xl font-bold text-white tracking-wide"><span id="moon-age">--</span></p>
+                            <p class="text-xs text-slate-500 mt-1" id="moon-phase-name">--</p>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- 3. グラフセクション (24時間の推移) -->
+            <section class="glass-panel rounded-2xl p-6 shadow-xl lg:col-span-2">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-semibold flex items-center gap-2">
+                        <i data-lucide="trending-up" class="text-emerald-400"></i>
+                        これから24時間の推移
+                    </h2>
+                </div>
+                <div class="chart-container">
+                    <canvas id="forecastChart"></canvas>
+                </div>
+            </section>
+            
+        </div>
+    </div>
+
+    <!-- メインロジック -->
+    <script>
+        // 横浜市の座標
+        const LAT = 35.4437;
+        const LNG = 139.6380;
+
+        // WMO気象コードの変換テーブル
+        const weatherCodes = {
+            0: { text: "快晴", icon: "sun", color: "text-yellow-400" },
+            1: { text: "晴れ", icon: "sun", color: "text-yellow-400" },
+            2: { text: "一部曇り", icon: "cloud-sun", color: "text-slate-300" },
+            3: { text: "曇り", icon: "cloud", color: "text-slate-400" },
+            45: { text: "霧", icon: "cloud-fog", color: "text-slate-300" },
+            48: { text: "霧氷", icon: "cloud-fog", color: "text-slate-300" },
+            51: { text: "霧雨 (弱)", icon: "cloud-drizzle", color: "text-blue-300" },
+            53: { text: "霧雨 (中)", icon: "cloud-drizzle", color: "text-blue-400" },
+            55: { text: "霧雨 (強)", icon: "cloud-drizzle", color: "text-blue-500" },
+            61: { text: "雨 (弱)", icon: "cloud-rain", color: "text-blue-400" },
+            63: { text: "雨 (中)", icon: "cloud-rain", color: "text-blue-500" },
+            65: { text: "雨 (強)", icon: "cloud-rain", color: "text-blue-600" },
+            71: { text: "雪 (弱)", icon: "cloud-snow", color: "text-white" },
+            73: { text: "雪 (中)", icon: "cloud-snow", color: "text-white" },
+            75: { text: "雪 (強)", icon: "cloud-snow", color: "text-white" },
+            95: { text: "雷雨", icon: "cloud-lightning", color: "text-yellow-500" },
+            96: { text: "雷雨 (弱雹)", icon: "cloud-lightning", color: "text-yellow-500" },
+            99: { text: "雷雨 (強雹)", icon: "cloud-lightning", color: "text-yellow-500" },
+        };
+
+        // UI初期化・時計
+        function updateTime() {
+            const now = new Date();
+            const options = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit' };
+            document.getElementById('current-time-display').innerText = now.toLocaleDateString('ja-JP', options);
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // ----------------------------------------------------
+        // 2. 天文情報の自前計算ロジック
+        // ----------------------------------------------------
+        
+        // 日の出・日の入りの近似計算 (NOAA Solar Calculations基準)
+        function calculateSunriseSunset(date, lat, lng) {
+            const rad = Math.PI / 180;
+            const startOfYear = new Date(date.getFullYear(), 0, 0);
+            const diff = date - startOfYear;
+            const dayOfYear = Math.floor(diff / 86400000);
+
+            // Fractional year
+            const gamma = (2 * Math.PI / 365) * (dayOfYear - 1 + (12 - 12) / 24);
+
+            // Equation of time (minutes)
+            const eqTime = 229.18 * (
+                0.000075 + 
+                0.001868 * Math.cos(gamma) - 
+                0.032077 * Math.sin(gamma) - 
+                0.014615 * Math.cos(2 * gamma) - 
+                0.040849 * Math.sin(2 * gamma)
+            );
+
+            // Solar declination (radians)
+            const decl = 0.006918 - 
+                0.399912 * Math.cos(gamma) + 
+                0.070257 * Math.sin(gamma) - 
+                0.006758 * Math.cos(2 * gamma) + 
+                0.000907 * Math.sin(2 * gamma) - 
+                0.002697 * Math.cos(3 * gamma) + 
+                0.00148 * Math.sin(3 * gamma);
+
+            // Hour angle (radians) - Zenith is 90.833 deg
+            const haArg = (Math.cos(90.833 * rad) / (Math.cos(lat * rad) * Math.cos(decl))) - Math.tan(lat * rad) * Math.tan(decl);
+            const ha = Math.acos(Math.max(-1, Math.min(1, haArg)));
+
+            // UTC Sunrise/Sunset in minutes from midnight
+            const sunriseUTC = 720 - 4 * (lng + ha / rad) - eqTime;
+            const sunsetUTC = 720 - 4 * (lng - ha / rad) - eqTime;
+
+            // Convert to JST (UTC+9)
+            const tzOffsetMins = 9 * 60;
+            const formatTime = (mins) => {
+                const local = (mins + tzOffsetMins) % 1440;
+                const h = Math.floor(local / 60).toString().padStart(2, '0');
+                const m = Math.floor(local % 60).toString().padStart(2, '0');
+                return `${h}:${m}`;
+            };
+
+            return {
+                sunriseStr: formatTime(sunriseUTC),
+                sunsetStr: formatTime(sunsetUTC),
+                sunriseMins: (sunriseUTC + tzOffsetMins) % 1440,
+                sunsetMins: (sunsetUTC + tzOffsetMins) % 1440
+            };
+        }
+
+        // 月齢とフェーズ計算 (Meeus algorithm近似)
+        function calculateMoon(date) {
+            let year = date.getUTCFullYear();
+            let month = date.getUTCMonth() + 1;
+            let day = date.getUTCDate();
+
+            if (month < 3) {
+                year--;
+                month += 12;
+            }
+            const a = Math.floor(year / 100);
+            const b = Math.floor(a / 4);
+            const c = 2 - a + b;
+            const jd = Math.floor(365.25 * (year + 4716)) + Math.floor(30.6001 * (month + 1)) + day + c - 1524.5;
+
+            // 基準新月: 2000-01-06 18:14 UTC -> JD 2451549.5 付近
+            const daysSinceNew = jd - 2451549.5;
+            const cycles = daysSinceNew / 29.53058867;
+            const phasePercentage = cycles - Math.floor(cycles);
+            const age = phasePercentage * 29.53058867;
+
+            return { age, phasePercentage };
+        }
+
+        // 月の形状 SVG生成
+        function generateMoonSVG(phasePercentage) {
+            let sweep2;
+            let lightPath = "";
+            
+            // 0:新月, 0.5:満月, 1.0:新月
+            if (phasePercentage <= 0.5) {
+                // 上弦側 (右側が光る)
+                let rx = 50 * (1 - (phasePercentage * 4)); 
+                sweep2 = rx > 0 ? 0 : 1; 
+                rx = Math.abs(rx);
+                lightPath = `M 50 0 A 50 50 0 0 1 50 100 A ${rx} 50 0 0 ${sweep2} 50 0`;
+            } else {
+                // 下弦側 (左側が光る)
+                let rx = 50 * (1 - ((phasePercentage - 0.5) * 4)); 
+                sweep2 = rx > 0 ? 1 : 0; 
+                rx = Math.abs(rx);
+                lightPath = `M 50 0 A 50 50 0 0 0 50 100 A ${rx} 50 0 0 ${sweep2} 50 0`;
+            }
+
+            return `
+                <svg viewBox="-5 -5 110 110" class="w-16 h-16 drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">
+                    <circle cx="50" cy="50" r="49" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+                    <path d="${lightPath}" fill="#fef08a" />
+                </svg>
+            `;
+        }
+
+        function getMoonPhaseName(age) {
+            if (age < 1 || age > 28.5) return "新月 (New Moon)";
+            if (age < 6) return "三日月 (Crescent)";
+            if (age < 8.5) return "上弦の月 (First Quarter)";
+            if (age < 13.5) return "十三夜 (Gibbous)";
+            if (age < 15.5) return "満月 (Full Moon)";
+            if (age < 21) return "寝待月 (Waning Gibbous)";
+            if (age < 23.5) return "下弦の月 (Last Quarter)";
+            return "有明の月 (Waning Crescent)";
+        }
+
+        // ----------------------------------------------------
+        // データ取得と描画
+        // ----------------------------------------------------
+        async function fetchDashboardData() {
+            try {
+                // 気象データの取得 (Open-Meteo)
+                const apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LNG}&current=temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m,weather_code&hourly=temperature_2m,precipitation_probability&timezone=Asia%2FTokyo`;
+                
+                const response = await fetch(apiUrl);
+                const data = await response.json();
+
+                renderWeatherInfo(data.current);
+                renderAstronomyInfo();
+                renderChart(data.hourly);
+                
+                // アイコンの再描画
+                lucide.createIcons();
+
+            } catch (error) {
+                console.error("データの取得に失敗しました", error);
+                document.getElementById('weather-loading').innerHTML = "<p class='text-red-400'>データの読み込みに失敗しました。</p>";
+            }
+        }
+
+        // 気象情報UIの更新
+        function renderWeatherInfo(current) {
+            document.getElementById('weather-loading').classList.add('hidden');
+            document.getElementById('weather-content').classList.remove('hidden');
+
+            const code = current.weather_code;
+            const weather = weatherCodes[code] || { text: "不明", icon: "cloud", color: "text-slate-300" };
+
+            // 要素更新
+            document.getElementById('temp-val').innerText = current.temperature_2m.toFixed(1);
+            document.getElementById('feels-val').innerText = current.apparent_temperature.toFixed(1);
+            document.getElementById('humidity-val').innerText = current.relative_humidity_2m;
+            document.getElementById('wind-val').innerText = current.wind_speed_10m.toFixed(1);
+            
+            document.getElementById('weather-desc').innerText = weather.text;
+            
+            const iconEl = document.getElementById('weather-icon');
+            iconEl.setAttribute('data-lucide', weather.icon);
+            iconEl.className = `w-20 h-20 mx-auto mb-2 ${weather.color}`;
+        }
+
+        // 天文情報UIの更新
+        function renderAstronomyInfo() {
+            const now = new Date();
+            
+            // 日の出・日の入りの自前計算
+            const sunData = calculateSunriseSunset(now, LAT, LNG);
+            document.getElementById('sunrise-time').innerText = sunData.sunriseStr;
+            document.getElementById('sunset-time').innerText = sunData.sunsetStr;
+
+            // 太陽のアーチプロット
+            const currentMins = now.getHours() * 60 + now.getMinutes();
+            const sunIcon = document.getElementById('sun-icon');
+            const sunLabel = document.getElementById('sun-status-label');
+            
+            if (currentMins < sunData.sunriseMins) {
+                sunLabel.innerText = "日の出前";
+                sunIcon.setAttribute("display", "none");
+            } else if (currentMins > sunData.sunsetMins) {
+                sunLabel.innerText = "日の入り後";
+                sunIcon.setAttribute("display", "none");
+            } else {
+                sunLabel.innerText = "日中";
+                sunIcon.setAttribute("display", "block");
+                
+                // 位置の計算 (アーチ上 0~180度)
+                const dayLength = sunData.sunsetMins - sunData.sunriseMins;
+                const progress = (currentMins - sunData.sunriseMins) / dayLength;
+                
+                // アーチ: 中心(50, 90), 半径40. 角度(π -> 0)
+                const angle = Math.PI * (1 - progress);
+                const cx = 50;
+                const cy = 90;
+                const r = 40;
+                
+                sunIcon.setAttribute("cx", cx + r * Math.cos(angle));
+                sunIcon.setAttribute("cy", cy - r * Math.sin(angle));
+            }
+
+            // 月齢の計算と描画
+            const moonData = calculateMoon(now);
+            document.getElementById('moon-age').innerText = moonData.age.toFixed(1);
+            document.getElementById('moon-phase-name').innerText = getMoonPhaseName(moonData.age);
+            document.getElementById('moon-svg-container').innerHTML = generateMoonSVG(moonData.phasePercentage);
+        }
+
+        // 24時間グラフの描画
+        function renderChart(hourly) {
+            const ctx = document.getElementById('forecastChart').getContext('2d');
+            
+            // 現在時刻に最も近いインデックスを探す
+            const now = new Date();
+            const currentISO = now.getFullYear() + "-" + 
+                String(now.getMonth()+1).padStart(2,'0') + "-" + 
+                String(now.getDate()).padStart(2,'0') + "T" + 
+                String(now.getHours()).padStart(2,'0') + ":00";
+            
+            let startIndex = hourly.time.findIndex(t => t >= currentISO);
+            if(startIndex === -1) startIndex = 0;
+
+            // 24時間分のデータをスライス
+            const times = hourly.time.slice(startIndex, startIndex + 24).map(t => {
+                const d = new Date(t);
+                return `${String(d.getHours()).padStart(2, '0')}:00`;
+            });
+            const temps = hourly.temperature_2m.slice(startIndex, startIndex + 24);
+            const precips = hourly.precipitation_probability.slice(startIndex, startIndex + 24);
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: times,
+                    datasets: [
+                        {
+                            label: '気温 (℃)',
+                            data: temps,
+                            borderColor: '#fbbf24', // Amber 400
+                            backgroundColor: 'rgba(251, 191, 36, 0.2)',
+                            yAxisID: 'y',
+                            type: 'line',
+                            tension: 0.4,
+                            borderWidth: 2,
+                            pointRadius: 2,
+                            pointBackgroundColor: '#fbbf24',
+                            fill: true
+                        },
+                        {
+                            label: '降水確率 (%)',
+                            data: precips,
+                            backgroundColor: 'rgba(56, 189, 248, 0.4)', // Sky 400 with opacity
+                            hoverBackgroundColor: 'rgba(56, 189, 248, 0.7)',
+                            yAxisID: 'y1',
+                            type: 'bar',
+                            borderRadius: 4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: 'rgba(255, 255, 255, 0.6)' }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: '気温 (℃)',
+                                color: 'rgba(251, 191, 36, 0.8)'
+                            },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                            ticks: { color: 'rgba(255, 255, 255, 0.8)' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            min: 0,
+                            max: 100,
+                            title: {
+                                display: true,
+                                text: '降水確率 (%)',
+                                color: 'rgba(56, 189, 248, 0.8)'
+                            },
+                            grid: { drawOnChartArea: false },
+                            ticks: { color: 'rgba(255, 255, 255, 0.8)' }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: 'rgba(255, 255, 255, 0.8)' }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                            titleColor: '#fff',
+                            bodyColor: '#cbd5e1',
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            borderWidth: 1
+                        }
+                    }
+                }
+            });
+        }
+
+        // 初期化処理
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            fetchDashboardData();
+        });
+
+    </script>
+</body>
+</html>
